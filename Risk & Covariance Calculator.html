@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Risk & Covariance Calculator</title>
+<style>
+:root{--bg:#f6f7f4;--surface:#ffffff;--text:#1d2a24;--muted:#5d6b64;--line:#d9ded9;--accent:#0f6b4f;--accent-soft:#e3f1ea;--warn:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14201b;--surface:#1c2a24;--text:#e6eee9;--muted:#9fb0a7;--line:#2f4239;--accent:#5cc79f;--accent-soft:#21382e;--warn:#ff8a80;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14201b;--surface:#1c2a24;--text:#e6eee9;--muted:#9fb0a7;--line:#2f4239;--accent:#5cc79f;--accent-soft:#21382e;--warn:#ff8a80;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 Georgia,"Times New Roman",serif}
+main{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.01em}
+h2{font-size:1.15rem;margin:0 0 10px}
+p.sub{color:var(--muted);margin:0 0 24px;max-width:62ch}
+section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:18px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:520px}
+th{font:600 .85rem system-ui,sans-serif;color:var(--muted);text-align:left;padding:6px 6px}
+td{padding:4px 4px}
+input{width:100%;font:1rem system-ui,sans-serif;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button{font:600 .9rem system-ui,sans-serif;padding:8px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--bg);cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.status{font:.9rem system-ui,sans-serif;color:var(--muted)}
+.status.bad{color:var(--warn)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.stat{background:var(--accent-soft);border-radius:8px;padding:12px 14px}
+.stat b{display:block;font:600 1.45rem system-ui,sans-serif;color:var(--accent)}
+.stat span{font:.85rem system-ui,sans-serif;color:var(--muted)}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+label{font:.85rem system-ui,sans-serif;color:var(--muted);display:block;margin-bottom:4px}
+.formula{font:.9rem system-ui,sans-serif;color:var(--muted);margin-top:10px}
+</style>
+</head>
+<body>
+<main>
+<h1>Risk & Covariance Calculator</h1>
+<p class="sub">Enter possible outcomes (scenarios) with their probabilities and returns. The page calculates expected return, variance, standard deviation, covariance, correlation and beta. Type returns in percent.</p>
+
+<section>
+<h2>1. Scenarios</h2>
+<div class="scroll"><table id="tbl">
+<thead><tr><th>Scenario</th><th>Probability (%)</th><th>Stock A return (%)</th><th>Stock B return (%)</th><th>Market return (%)</th><th></th></tr></thead>
+<tbody></tbody></table></div>
+<div class="row">
+<button id="add">Add scenario</button>
+<button class="ghost" id="reset">Load example</button>
+<span id="status" class="status"></span>
+</div>
+</section>
+
+<section>
+<h2>2. Results from scenarios</h2>
+<div class="grid" id="out"></div>
+<p class="formula">Expected return = Σ p × R. Variance = Σ p × (R − E[R])². Covariance(A,B) = Σ p × (R<sub>A</sub> − E[R<sub>A</sub>]) × (R<sub>B</sub> − E[R<sub>B</sub>]). Beta = Cov(stock, market) ÷ Variance(market).</p>
+</section>
+
+<section>
+<h2>3. Quick calculator: already know the market's standard deviation?</h2>
+<div class="fields">
+<div><label for="sm">Market standard deviation (%)</label><input id="sm" type="number" step="any" value="15"></div>
+<div><label for="ss">Stock standard deviation (%)</label><input id="ss" type="number" step="any" value="25"></div>
+<div><label for="rho">Correlation with market (−1 to 1)</label><input id="rho" type="number" step="any" value="0.6"></div>
+</div>
+<div class="grid" id="quick" style="margin-top:14px"></div>
+<p class="formula">Covariance = correlation × stock SD × market SD. Beta = covariance ÷ market variance.</p>
+</section>
+</main>
+
+<script>
+(function(){
+var EX=[["Boom",30,25,18,14],["Normal",50,12,9,8],["Recession",20,-15,-5,-10]];
+var tb=document.querySelector("#tbl tbody"),st=document.getElementById("status"),out=document.getElementById("out");
+function f(x,d){return isFinite(x)?x.toFixed(d===undefined?2:d):"n/a"}
+function addRow(r){
+ var tr=document.createElement("tr");
+ tr.innerHTML='<td><input type="text" value="'+r[0]+'" aria-label="Scenario name"></td>'+
+ [1,2,3,4].map(function(i){return '<td><input type="number" step="any" value="'+r[i]+'"></td>'}).join("")+
+ '<td><button class="ghost" aria-label="Remove scenario">Remove</button></td>';
+ tr.querySelector("button").onclick=function(){tr.remove();calc()};
+ tr.addEventListener("input",calc);
+ tb.appendChild(tr);
+}
+function load(){tb.innerHTML="";EX.forEach(addRow);calc()}
+function stat(label,val){return '<div class="stat"><b>'+val+'</b><span>'+label+'</span></div>'}
+function calc(){
+ var rows=[].slice.call(tb.rows).map(function(tr){var v=tr.querySelectorAll("input");
+  return [parseFloat(v[1].value)/100,parseFloat(v[2].value)/100,parseFloat(v[3].value)/100,parseFloat(v[4].value)/100]});
+ var ok=rows.length>0&&rows.every(function(r){return r.every(isFinite)});
+ if(!ok){st.textContent="Fill every cell with a number.";st.className="status bad";out.innerHTML="";return}
+ var sum=rows.reduce(function(a,r){return a+r[0]},0);
+ if(Math.abs(sum-1)>1e-6){st.textContent="Probabilities add up to "+f(sum*100)+"%. They must total 100%.";st.className="status bad";out.innerHTML="";return}
+ st.textContent="Probabilities total 100%.";st.className="status";
+ var E=[1,2,3].map(function(k){return rows.reduce(function(a,r){return a+r[0]*r[k]},0)});
+ function cov(i,j){return rows.reduce(function(a,r){return a+r[0]*(r[i+1]-E[i])*(r[j+1]-E[j])},0)}
+ var V=[0,1,2].map(function(i){return cov(i,i)}),S=V.map(Math.sqrt);
+ var cAB=cov(0,1),cAM=cov(0,2),cBM=cov(1,2);
+ var h="";
+ ["Stock A","Stock B","Market"].forEach(function(n,i){
+  h+=stat(n+" expected return",f(E[i]*100)+"%")+stat(n+" variance",f(V[i],5))+stat(n+" standard deviation",f(S[i]*100)+"%")});
+ h+=stat("Covariance (A, B)",f(cAB,5))+stat("Correlation (A, B)",f(cAB/(S[0]*S[1]),3))+
+    stat("Covariance (A, Market)",f(cAM,5))+stat("Covariance (B, Market)",f(cBM,5))+
+    stat("Beta of Stock A",f(cAM/V[2],3))+stat("Beta of Stock B",f(cBM/V[2],3));
+ out.innerHTML=h;
+}
+function quick(){
+ var sm=parseFloat(document.getElementById("sm").value)/100,ss=parseFloat(document.getElementById("ss").value)/100,rho=parseFloat(document.getElementById("rho").value);
+ var q=document.getElementById("quick");
+ if(!isFinite(sm)||!isFinite(ss)||!isFinite(rho)||sm<=0||ss<0||rho<-1||rho>1){q.innerHTML='<span class="status bad">Enter positive standard deviations and a correlation between −1 and 1.</span>';return}
+ var c=rho*ss*sm;
+ q.innerHTML=stat("Covariance with market",f(c,5))+stat("Beta",f(c/(sm*sm),3))+stat("Market variance",f(sm*sm,5));
+}
+document.getElementById("add").onclick=function(){addRow(["New",0,0,0,0]);calc()};
+document.getElementById("reset").onclick=load;
+["sm","ss","rho"].forEach(function(id){document.getElementById(id).addEventListener("input",quick)});
+load();quick();
+})();
+</script>
+</body>
+</html>
